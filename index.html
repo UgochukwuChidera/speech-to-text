@@ -387,6 +387,7 @@ const settingsPanel = $('settingsPanel');
 const apiKeyInput = $('apiKey');
 const contextInput = $('contextPrompt');
 
+let mediaStream = null;
 let mediaRecorder = null;
 let audioChunks = [];
 let isRecording = false;
@@ -479,28 +480,31 @@ recordBtn.addEventListener('click', async () => {
 
   hideError();
 
-  if (!navigator.mediaDevices?.getUserMedia) {
-    showError('Your browser does not support audio recording.');
-    return;
-  }
-
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        sampleRate: { ideal: 16000 },
-        channelCount: { ideal: 1 },
-        echoCancellation: true,
-        noiseSuppression: true,
+  if (!mediaStream) {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      showError('Your browser does not support audio recording.');
+      return;
+    }
+    try {
+      mediaStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          sampleRate: { ideal: 16000 },
+          channelCount: { ideal: 1 },
+          echoCancellation: true,
+          noiseSuppression: true,
+        }
+      });
+    } catch (err) {
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        showError('Microphone access denied. Allow access and try again.');
+      } else {
+        showError('Microphone not available.');
       }
-    });
-    startRecording(stream);
-  } catch (err) {
-    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-      showError('Microphone access denied. Allow access and try again.');
-    } else {
-      showError('Microphone not available.');
+      return;
     }
   }
+
+  startRecording(mediaStream);
 });
 
 function startRecording(stream) {
@@ -521,7 +525,6 @@ function startRecording(stream) {
   };
 
   mediaRecorder.onstop = async () => {
-    stream.getTracks().forEach(t => t.stop());
     const ripples = recordBtn.querySelectorAll('.ripple');
     ripples.forEach(r => r.remove());
     isRecording = false;
