@@ -12,13 +12,21 @@ A browser-based speech-to-text app that uses **Groq's API** with the **Whisper-l
 
 ## Usage
 
-1. Open `index.html` in a modern browser.
-2. Click the gear icon to open settings and enter your [Groq API key](https://console.groq.com/keys).
-3. (Optional) Add a context prompt for domain-specific vocabulary.
-4. Tap the record button, speak, then tap again to stop and transcribe.
+> **Important:** Microphone permissions persist across page reloads only when served over HTTP/HTTPS, not via `file://`. Use the local server below.
+
+```bash
+node server.js
+# → http://localhost:3000
+```
+
+Then open `http://localhost:3000` in a modern browser.
+
+1. Click the gear icon to open settings and enter your [Groq API key](https://console.groq.com/keys).
+2. (Optional) Add a context prompt for domain-specific vocabulary.
+3. Tap the record button, speak, then tap again to stop and transcribe.
 
 ## Tech
 
-- Vanilla HTML / CSS / JS — no build step required.
+- Vanilla HTML / CSS / JS — no build step required (Node.js only for the dev server).
 - [Groq Audio Transcription API](https://console.groq.com/docs/speech-text)
 - Model: `whisper-large-v3-turbo`
