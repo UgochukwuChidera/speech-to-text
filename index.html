@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Voice to Text</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --border: #1e1e2a;
+    --text: #e4e4ed;
+    --text-muted: #7c7c8a;
+    --accent: #6c5ce7;
+    --accent-glow: rgba(108, 92, 231, 0.25);
+    --success: #00cec9;
+    --error: #ff6b6b;
+    --recording: #ff4757;
+  }
+
+  html, body {
+    height: 100%;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background:
+      radial-gradient(ellipse at 20% 50%, rgba(108, 92, 231, 0.06) 0%, transparent 50%),
+      radial-gradient(ellipse at 80% 50%, rgba(0, 206, 201, 0.04) 0%, transparent 50%),
+      var(--bg);
+  }
+
+  .container {
+    width: 100%;
+    max-width: 600px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 28px;
+  }
+
+  .card {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 32px;
+    backdrop-filter: blur(20px);
+    transition: border-color 0.3s;
+  }
+
+  .card:hover {
+    border-color: rgba(108, 92, 231, 0.2);
+  }
+
+  h1 {
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    text-align: center;
+  }
+
+  h1 span {
+    background: linear-gradient(135deg, var(--accent), var(--success));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .subtitle {
+    color: var(--text-muted);
+    font-size: 14px;
+    text-align: center;
+    margin-top: 6px;
+    font-weight: 300;
+  }
+
+  .record-btn {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    background: var(--surface);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    position: relative;
+    margin: 8px 0;
+  }
+
+  .record-btn:hover {
+    border-color: var(--accent);
+    transform: scale(1.05);
+  }
+
+  .record-btn:active {
+    transform: scale(0.95);
+  }
+
+  .record-btn .icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--text);
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .record-btn.recording {
+    border-color: var(--recording);
+    box-shadow: 0 0 30px rgba(255, 71, 87, 0.2);
+  }
+
+  .record-btn.recording .icon {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    background: var(--recording);
+  }
+
+  .record-btn.loading {
+    pointer-events: none;
+    border-color: var(--accent);
+  }
+
+  .record-btn.loading .icon {
+    animation: pulse 1s ease-in-out infinite;
+    background: var(--accent);
+    border-radius: 50%;
+  }
+
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(0.7); opacity: 0.5; }
+  }
+
+  .record-btn .ripple {
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    border: 2px solid var(--recording);
+    animation: ripple 1.5s ease-out infinite;
+    opacity: 0;
+  }
+
+  @keyframes ripple {
+    0% { transform: scale(1); opacity: 0.6; }
+    100% { transform: scale(1.3); opacity: 0; }
+  }
+
+  .status {
+    font-size: 13px;
+    color: var(--text-muted);
+    min-height: 20px;
+    text-align: center;
+    transition: color 0.3s;
+  }
+
+  .status.active { color: var(--recording); }
+  .status.processing { color: var(--accent); }
+
+  .transcript-box {
+    width: 100%;
+    min-height: 100px;
+    max-height: 300px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1.7;
+    overflow-y: auto;
+    resize: none;
+    font-family: 'Inter', sans-serif;
+    transition: border-color 0.3s;
+  }
+
+  .transcript-box:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  .transcript-box::placeholder {
+    color: var(--text-muted);
+    font-weight: 300;
+  }
+
+  .transcript-box:empty::before {
+    content: 'Your transcription will appear here...';
+    color: var(--text-muted);
+    font-weight: 300;
+  }
+
+  .actions {
+    display: flex;
+    gap: 10px;
+    width: 100%;
+  }
+
+  .actions button {
+    flex: 1;
+    padding: 10px 16px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: 'Inter', sans-serif;
+  }
+
+  .actions button:hover {
+    border-color: var(--accent);
+    color: var(--text);
+  }
+
+  .actions button:active {
+    transform: scale(0.97);
+  }
+
+  .actions button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .settings-toggle {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 13px;
+    cursor: pointer;
+    font-family: 'Inter', sans-serif;
+    transition: color 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .settings-toggle:hover {
+    color: var(--text);
+  }
+
+  .settings-panel {
+    width: 100%;
+    display: none;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .settings-panel.open {
+    display: flex;
+  }
+
+  .settings-panel label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .settings-panel input {
+    width: 100%;
+    padding: 10px 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--text);
+    font-size: 14px;
+    font-family: 'Inter', sans-serif;
+    transition: border-color 0.3s;
+  }
+
+  .settings-panel input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  .footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .word-count {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .model-badge {
+    font-size: 11px;
+    color: var(--text-muted);
+    background: var(--bg);
+    padding: 4px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+  }
+
+  .error-msg {
+    color: var(--error);
+    font-size: 13px;
+    text-align: center;
+    display: none;
+  }
+
+  .error-msg.visible {
+    display: block;
+  }
+
+  @media (max-width: 480px) {
+    .card { padding: 20px; }
+    .record-btn { width: 64px; height: 64px; }
+    .record-btn .icon { width: 26px; height: 26px; }
+    .record-btn.recording .icon { width: 16px; height: 16px; border-radius: 3px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div>
+    <h1><span>Voice</span> to Text</h1>
+    <p class="subtitle">Speak &mdash; get instant transcriptions</p>
+  </div>
+
+  <div class="card" style="display:flex;flex-direction:column;align-items:center;gap:20px">
+    <button class="record-btn" id="recordBtn" title="Click to record">
+      <div class="icon"></div>
+      <div class="ripple" id="ripple"></div>
+    </button>
+    <p class="status" id="status">Tap the button to start recording</p>
+
+    <div class="error-msg" id="error"></div>
+
+    <div id="transcript" class="transcript-box" contenteditable="true" role="textbox"></div>
+
+    <div class="actions">
+      <button id="copyBtn" disabled>Copy</button>
+      <button id="clearBtn">Clear</button>
+    </div>
+
+    <div class="footer">
+      <span class="word-count" id="wordCount">0 words</span>
+      <button class="settings-toggle" id="settingsToggle">&#9881; API Key</button>
+    </div>
+  </div>
+
+    <div class="settings-panel card" id="settingsPanel">
+    <label for="apiKey">Groq API Key</label>
+    <input type="password" id="apiKey" placeholder="gsk_..." autocomplete="off">
+    <p style="font-size:12px;color:var(--text-muted)">Get yours free at <a href="https://console.groq.com/keys" target="_blank" style="color:var(--accent);text-decoration:none">console.groq.com</a> &mdash; stored locally only.</p>
+    <label for="contextPrompt">Context (optional — helps accuracy)</label>
+    <input type="text" id="contextPrompt" placeholder="e.g. medical terminology, tech talk, names..." autocomplete="off">
+    <p style="font-size:12px;color:var(--text-muted)">Describe the topic so Whisper weights relevant vocabulary higher.</p>
+  </div>
+</div>
+
+<script>
+const GROQ_URL = 'https://api.groq.com/openai/v1/audio/transcriptions';
+const MODEL = 'whisper-large-v3-turbo';
+
+const $ = id => document.getElementById(id);
+const recordBtn = $('recordBtn');
+const statusEl = $('status');
+const transcript = $('transcript');
+const copyBtn = $('copyBtn');
+const clearBtn = $('clearBtn');
+const errorEl = $('error');
+const wordCount = $('wordCount');
+const settingsToggle = $('settingsToggle');
+const settingsPanel = $('settingsPanel');
+const apiKeyInput = $('apiKey');
+const contextInput = $('contextPrompt');
+
+let mediaRecorder = null;
+let audioChunks = [];
+let isRecording = false;
+let isProcessing = false;
+
+apiKeyInput.value = localStorage.getItem('groq_api_key') || '';
+contextInput.value = localStorage.getItem('groq_context_prompt') || '';
+
+apiKeyInput.addEventListener('input', () => {
+  localStorage.setItem('groq_api_key', apiKeyInput.value);
+});
+
+contextInput.addEventListener('input', () => {
+  localStorage.setItem('groq_context_prompt', contextInput.value);
+});
+
+settingsToggle.addEventListener('click', () => {
+  settingsPanel.classList.toggle('open');
+  settingsToggle.textContent = settingsPanel.classList.contains('open') ? '\u2715 Close' : '\u2699 API Key';
+});
+
+function updateWordCount() {
+  const text = transcript.innerText.trim();
+  const count = text ? text.split(/\s+/).length : 0;
+  wordCount.textContent = `${count} word${count !== 1 ? 's' : ''}`;
+}
+
+transcript.addEventListener('input', updateWordCount);
+
+function setStatus(text, type = '') {
+  statusEl.textContent = text;
+  statusEl.className = 'status' + (type ? ' ' + type : '');
+}
+
+function showError(msg) {
+  errorEl.textContent = msg;
+  errorEl.classList.add('visible');
+}
+
+function hideError() {
+  errorEl.classList.remove('visible');
+}
+
+function getApiKey() {
+  const key = apiKeyInput.value.trim();
+  if (!key) {
+    showError('Enter your Groq API key in the settings first.');
+    settingsPanel.classList.add('open');
+    settingsToggle.textContent = '\u2715 Close';
+    apiKeyInput.focus();
+    return null;
+  }
+  return key;
+}
+
+function updateButtons() {
+  copyBtn.disabled = !transcript.innerText.trim();
+}
+
+transcript.addEventListener('input', updateButtons);
+
+copyBtn.addEventListener('click', async () => {
+  const text = transcript.innerText.trim();
+  if (!text) return;
+  try {
+    await navigator.clipboard.writeText(text);
+    copyBtn.textContent = 'Copied!';
+    setTimeout(() => { copyBtn.textContent = 'Copy'; }, 1500);
+  } catch {
+    showError('Failed to copy.');
+  }
+});
+
+clearBtn.addEventListener('click', () => {
+  transcript.innerText = '';
+  updateWordCount();
+  updateButtons();
+  hideError();
+});
+
+recordBtn.addEventListener('click', async () => {
+  if (isProcessing) return;
+
+  if (isRecording) {
+    stopRecording();
+    return;
+  }
+
+  if (!getApiKey()) return;
+
+  hideError();
+
+  if (!navigator.mediaDevices?.getUserMedia) {
+    showError('Your browser does not support audio recording.');
+    return;
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        sampleRate: { ideal: 16000 },
+        channelCount: { ideal: 1 },
+        echoCancellation: true,
+        noiseSuppression: true,
+      }
+    });
+    startRecording(stream);
+  } catch (err) {
+    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+      showError('Microphone access denied. Allow access and try again.');
+    } else {
+      showError('Microphone not available.');
+    }
+  }
+});
+
+function startRecording(stream) {
+  audioChunks = [];
+  isRecording = true;
+  recordBtn.classList.add('recording');
+  setStatus('Recording... tap to stop', 'active');
+  hideError();
+
+  const ripple = document.createElement('div');
+  ripple.className = 'ripple';
+  recordBtn.appendChild(ripple);
+
+  mediaRecorder = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4' });
+
+  mediaRecorder.ondataavailable = e => {
+    if (e.data.size > 0) audioChunks.push(e.data);
+  };
+
+  mediaRecorder.onstop = async () => {
+    stream.getTracks().forEach(t => t.stop());
+    const ripples = recordBtn.querySelectorAll('.ripple');
+    ripples.forEach(r => r.remove());
+    isRecording = false;
+    recordBtn.classList.remove('recording');
+
+    if (audioChunks.length === 0) {
+      setStatus('No audio captured. Try again.', '');
+      return;
+    }
+
+    await transcribe();
+  };
+
+  mediaRecorder.start();
+}
+
+function stopRecording() {
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+    mediaRecorder.stop();
+  }
+}
+
+async function transcribe() {
+  isProcessing = true;
+  recordBtn.classList.add('loading');
+  setStatus('Transcribing...', 'processing');
+
+  const audioBlob = new Blob(audioChunks, { type: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4' });
+
+  const formData = new FormData();
+  formData.append('file', audioBlob, 'recording.' + (MediaRecorder.isTypeSupported('audio/webm') ? 'webm' : 'mp4'));
+  formData.append('model', MODEL);
+  formData.append('temperature', '0');
+  const ctx = contextInput.value.trim();
+  if (ctx) formData.append('prompt', ctx);
+
+  try {
+    const res = await fetch(GROQ_URL, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${apiKeyInput.value.trim()}` },
+      body: formData,
+    });
+
+    if (!res.ok) {
+      let msg = `Error ${res.status}`;
+      try {
+        const err = await res.json();
+        msg = err.error?.message || msg;
+      } catch {}
+      throw new Error(msg);
+    }
+
+    const data = await res.json();
+    const text = data.text || '';
+
+    if (text) {
+      transcript.innerText = transcript.innerText
+        ? transcript.innerText.trim() + ' ' + text
+        : text;
+      transcript.scrollTop = transcript.scrollHeight;
+      updateWordCount();
+      updateButtons();
+      setStatus('Transcription complete', '');
+    } else {
+      setStatus('No speech detected. Try again.', '');
+    }
+  } catch (err) {
+    showError(err.message);
+    setStatus('Transcription failed', '');
+  } finally {
+    isProcessing = false;
+    recordBtn.classList.remove('loading');
+  }
+}
+
+updateWordCount();
+updateButtons();
+</script>
+</body>
+</html>
