@@ -1,6 +1,6 @@
 # Voice to Text
 
-A browser-based speech-to-text app using **Groq's Whisper API** with a **LiveKit Agents UI** visualizer.
+Browser-based speech-to-text using **Groq's Whisper API** with a **LiveKit Agents UI** aura visualizer.
 
 Built with **React + TypeScript + Vite + shadcn/ui + Tailwind CSS v4**.
 
@@ -14,9 +14,17 @@ npm run dev
 
 ## Usage
 
-1. Open the app in a modern browser.
-2. Enter your [Groq API key](https://console.groq.com/keys) in settings.
-3. Tap the aura to start recording, tap again to stop and transcribe.
+1. Open the app, enter your [Groq API key](https://console.groq.com/keys) in settings.
+2. Toggle **Live** for streaming mode or leave off for standard record-and-transcribe.
+3. Tap the aura to start recording, tap again to stop.
+
+### Standard mode
+
+Records the entire audio, then transcribes in one shot when you stop.
+
+### Live mode
+
+Records continuously and transcribes in **5-second chunks** (12 req/min — well under Groq's 25/min limit). Each chunk's result streams into the text area **word by word** with a typewriter effect. Overlap detection prevents word duplication across chunk boundaries.
 
 ## Stack
 
