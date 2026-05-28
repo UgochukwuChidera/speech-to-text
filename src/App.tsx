@@ -5,7 +5,7 @@ import { AgentAudioVisualizerAura } from '@/components/agents-ui/agent-audio-vis
 const GROQ_URL = 'https://api.groq.com/openai/v1/audio/transcriptions'
 const MODEL = 'whisper-large-v3-turbo'
 const BASE_COLOR = '#1FD5F9'
-const CHUNK_MS = 2500
+const CHUNK_MS = 5000
 
 function hslToHex(h: number, s: number, l: number): `#${string}` {
   s /= 100; l /= 100
@@ -62,6 +62,7 @@ export default function App() {
   const [processingHue, setProcessingHue] = useState(0)
   const [liveMode, setLiveMode] = useState(false)
   const [liveActive, setLiveActive] = useState(false)
+  const [audioLevel, setAudioLevel] = useState(0)
 
   const streamRef = useRef<MediaStream | null>(null)
   const recorderRef = useRef<MediaRecorder | null>(null)
@@ -69,6 +70,28 @@ export default function App() {
   const liveChunkingRef = useRef(false)
   const extRef = useRef('webm')
   const typeRef = useRef('audio/webm')
+  const analyserRef = useRef<AnalyserNode | null>(null)
+  const audioCtxRef = useRef<AudioContext | null>(null)
+
+  useEffect(() => {
+    if (mode !== 'recording' || !streamRef.current) {
+      setAudioLevel(0)
+      return
+    }
+    let id: number
+    const ctx = audioCtxRef.current
+    const analyser = analyserRef.current
+    if (!ctx || !analyser) return
+    const data = new Uint8Array(analyser.frequencyBinCount)
+    function frame() {
+      analyser!.getByteFrequencyData(data)
+      const avg = data.reduce((a, b) => a + b, 0) / data.length / 255
+      setAudioLevel(Math.min(avg * 2.5, 1))
+      id = requestAnimationFrame(frame)
+    }
+    id = requestAnimationFrame(frame)
+    return () => { cancelAnimationFrame(id); setAudioLevel(0) }
+  }, [mode])
 
   useEffect(() => { localStorage.setItem('groq_api_key', apiKey) }, [apiKey])
   useEffect(() => { localStorage.setItem('groq_context_prompt', contextPrompt) }, [contextPrompt])
@@ -95,6 +118,13 @@ export default function App() {
       audio: { sampleRate: { ideal: 16000 }, channelCount: { ideal: 1 }, echoCancellation: true, noiseSuppression: true },
     })
     streamRef.current = stream
+    const ctx = new AudioContext()
+    audioCtxRef.current = ctx
+    const source = ctx.createMediaStreamSource(stream)
+    const analyser = ctx.createAnalyser()
+    analyser.fftSize = 256
+    source.connect(analyser)
+    analyserRef.current = analyser
     return stream
   }, [])
 
@@ -288,10 +318,19 @@ export default function App() {
             className="relative cursor-pointer appearance-none border-none bg-transparent p-0 outline-none disabled:cursor-not-allowed disabled:opacity-60"
             title={buttonTitle}
           >
+            {isRecording && (
+              <div
+                className="pointer-events-none absolute inset-0 -m-4 rounded-full transition-[transform,opacity] duration-75"
+                style={{
+                  background: `radial-gradient(circle, rgba(31,213,249,${audioLevel * 0.12}) 0%, transparent 70%)`,
+                  transform: `scale(${1 + audioLevel * 0.08})`,
+                }}
+              />
+            )}
             <AgentAudioVisualizerAura
               size="xl"
               color={auraColor}
-              colorShift={mode === 'processing' ? 0.6 : liveMode && isRecording ? 0.5 : 0.3}
+              colorShift={mode === 'processing' ? 0.6 : isRecording ? 0.2 + audioLevel * 0.5 : 0.3}
               state={mode === 'idle' ? 'connecting' : mode === 'processing' ? 'speaking' : isRecording && liveMode ? 'listening' : isRecording ? 'listening' : 'speaking'}
               themeMode={resolvedTheme}
               className="aspect-square size-auto w-36 sm:w-44"
