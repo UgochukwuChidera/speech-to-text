@@ -5,11 +5,22 @@ import type { AgentState } from '@livekit/components-react'
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/audio/transcriptions'
 const MODEL = 'whisper-large-v3-turbo'
+const BASE_COLOR = '#1FD5F9'
+
+function hslToHex(h: number, s: number, l: number): `#${string}` {
+  s /= 100; l /= 100
+  const a = s * Math.min(l, 1 - l)
+  const f = (n: number) => {
+    const k = (n + h / 30) % 12
+    return Math.round(255 * (l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1)))
+  }
+  return `#${[f(0), f(8), f(4)].map(n => n.toString(16).padStart(2, '0')).join('')}`
+}
 
 const AGENT_STATE: Record<string, AgentState> = {
   idle: 'connecting',
   recording: 'listening',
-  processing: 'thinking',
+  processing: 'speaking',
   complete: 'speaking',
 }
 
@@ -25,6 +36,23 @@ export default function App() {
   const [apiKey, setApiKey] = useState(getKey)
   const [contextPrompt, setContextPrompt] = useState(getContext)
   const [copied, setCopied] = useState(false)
+  const [processingHue, setProcessingHue] = useState(0)
+
+  useEffect(() => {
+    if (mode !== 'processing') return
+    let id: number
+    let start = performance.now()
+    function frame(now: number) {
+      setProcessingHue(((now - start) * 0.06) % 360)
+      id = requestAnimationFrame(frame)
+    }
+    id = requestAnimationFrame(frame)
+    return () => cancelAnimationFrame(id)
+  }, [mode])
+
+  const auraColor = mode === 'processing'
+    ? hslToHex(processingHue, 85, 55)
+    : BASE_COLOR
 
   const streamRef = useRef<MediaStream | null>(null)
   const recorderRef = useRef<MediaRecorder | null>(null)
@@ -170,8 +198,8 @@ export default function App() {
           >
             <AgentAudioVisualizerAura
               size="xl"
-              color="#1FD5F9"
-              colorShift={0.3}
+              color={auraColor}
+              colorShift={mode === 'processing' ? 0.6 : 0.3}
               state={AGENT_STATE[mode]}
               themeMode={resolvedTheme}
               className="aspect-square size-auto w-36 sm:w-44"
