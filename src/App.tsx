@@ -30,6 +30,13 @@ function mergeText(prev: string, incoming: string): string {
   return prev.trim() + ' ' + incoming.trim()
 }
 
+function getNewWords(prev: string, merged: string): string {
+  const pw = prev.trim().split(/\s+/).filter(Boolean)
+  const mw = merged.trim().split(/\s+/).filter(Boolean)
+  if (pw.length === 0 || pw[0] === '') return merged.trim()
+  return mw.slice(pw.length).join(' ')
+}
+
 async function transcribeChunk(blob: Blob, ext: string, apiKey: string, prompt: string): Promise<string> {
   const fd = new FormData()
   fd.append('file', blob, `chunk.${ext}`)
@@ -50,6 +57,21 @@ async function transcribeChunk(blob: Blob, ext: string, apiKey: string, prompt: 
   return res.text()
 }
 
+function streamWords(words: string, onWord: (w: string) => void): Promise<void> {
+  return new Promise(resolve => {
+    const tokens = words.match(/\S+\s*/g) || [words]
+    if (tokens.length === 0) { resolve(); return }
+    let i = 0
+    function next() {
+      if (i >= tokens.length) { resolve(); return }
+      onWord(tokens[i])
+      i++
+      setTimeout(next, 50 + Math.random() * 40)
+    }
+    next()
+  })
+}
+
 export default function App() {
   const { resolvedTheme } = useTheme()
   const [mode, setMode] = useState<'idle' | 'recording' | 'processing' | 'complete'>('idle')
@@ -68,6 +90,7 @@ export default function App() {
   const recorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const liveChunkingRef = useRef(false)
+  const streamingRef = useRef(false)
   const extRef = useRef('webm')
   const typeRef = useRef('audio/webm')
   const analyserRef = useRef<AnalyserNode | null>(null)
@@ -128,34 +151,46 @@ export default function App() {
     return stream
   }, [])
 
-  const sendChunk = useCallback(async (chunks: Blob[], type: string, ext: string) => {
-    const key = apiKey.trim()
-    if (!key) return
-    liveChunkingRef.current = true
-    setMode('processing')
+  const processAndStream = useCallback(async (chunks: Blob[], type: string, ext: string, key: string) => {
+    if (chunks.length === 0) return
+    streamingRef.current = true
     try {
       const blob = new Blob(chunks, { type })
       const ctx = contextPrompt.trim()
       const prompt = [ctx, transcript.trim()].filter(Boolean).join('\n')
       const text = await transcribeChunk(blob, ext, key, prompt)
-      if (text) {
-        setTranscript(prev => mergeText(prev, text))
-      }
+      if (!text) return
+      const merged = mergeText(transcript.trim(), text)
+      const newPart = getNewWords(transcript.trim(), merged)
+      if (!newPart) return
+      let acc = transcript.trim()
+      await streamWords(newPart, (w) => {
+        acc += w
+        setTranscript(acc)
+      })
     } catch (err) {
       setError((err as Error).message)
     } finally {
-      liveChunkingRef.current = false
-      if (recorderRef.current && recorderRef.current.state === 'recording') {
-        setMode('recording')
-      } else {
-        setMode('idle')
-      }
+      streamingRef.current = false
     }
-  }, [apiKey, contextPrompt, transcript])
+  }, [contextPrompt, transcript])
+
+  const sendChunk = useCallback(async (chunks: Blob[], type: string, ext: string) => {
+    const key = apiKey.trim()
+    if (!key) return
+    liveChunkingRef.current = true
+    setMode('processing')
+    await processAndStream(chunks, type, ext, key)
+    liveChunkingRef.current = false
+    if (recorderRef.current && recorderRef.current.state === 'recording') {
+      setMode('recording')
+    } else {
+      setMode('idle')
+    }
+  }, [apiKey, processAndStream])
 
   const handleClick = useCallback(async () => {
     if (mode === 'processing' && liveMode) return
-
     if (mode === 'recording' || liveActive) {
       recorderRef.current?.stop()
       return
@@ -188,7 +223,7 @@ export default function App() {
         recorder.ondataavailable = (e) => {
           if (e.data.size > 0) {
             chunksRef.current.push(e.data)
-            if (!liveChunkingRef.current) {
+            if (!liveChunkingRef.current && !streamingRef.current) {
               const snapshot = [...chunksRef.current]
               chunksRef.current = []
               sendChunk(snapshot, type, ext)
@@ -198,21 +233,14 @@ export default function App() {
 
         recorder.onstop = async () => {
           setLiveActive(false)
+          while (streamingRef.current) {
+            await new Promise(r => setTimeout(r, 100))
+          }
           if (chunksRef.current.length > 0 && !liveChunkingRef.current) {
             const snapshot = [...chunksRef.current]
             chunksRef.current = []
             setMode('processing')
-            try {
-              const blob = new Blob(snapshot, { type })
-              const ctx = contextPrompt.trim()
-              const prompt = [ctx, transcript.trim()].filter(Boolean).join('\n')
-              const text = await transcribeChunk(blob, ext, key, prompt)
-              if (text) {
-                setTranscript(prev => mergeText(prev, text))
-              }
-            } catch (err) {
-              setError((err as Error).message)
-            }
+            await processAndStream(snapshot, type, ext, key)
           }
           setMode('complete')
         }
@@ -232,36 +260,8 @@ export default function App() {
         recorder.onstop = async () => {
           if (chunksRef.current.length === 0) { setMode('idle'); return }
           setMode('processing')
-          try {
-            const blob = new Blob(chunksRef.current, { type })
-            const fd = new FormData()
-            fd.append('file', blob, `recording.${ext}`)
-            fd.append('model', MODEL)
-            fd.append('temperature', '0')
-            const ctx = contextPrompt.trim()
-            if (ctx) fd.append('prompt', ctx)
-            const res = await fetch(GROQ_URL, {
-              method: 'POST',
-              headers: { Authorization: `Bearer ${key}` },
-              body: fd,
-            })
-            if (!res.ok) {
-              let msg = `Error ${res.status}`
-              try { const e = await res.json(); msg = e.error?.message || msg } catch {}
-              throw new Error(msg)
-            }
-            const data = await res.json()
-            const text = data.text || ''
-            if (text) {
-              setTranscript(prev => prev ? prev.trim() + ' ' + text : text)
-              setMode('complete')
-            } else {
-              setMode('idle')
-            }
-          } catch (err) {
-            setError((err as Error).message)
-            setMode('idle')
-          }
+          await processAndStream(chunksRef.current, type, ext, key)
+          setMode('complete')
         }
 
         recorder.start()
@@ -274,7 +274,7 @@ export default function App() {
       }
       setMode('idle')
     }
-  }, [mode, liveMode, liveActive, apiKey, contextPrompt, transcript, getMic, sendChunk])
+  }, [mode, liveMode, liveActive, apiKey, contextPrompt, getMic, sendChunk, processAndStream])
 
   const handleCopy = useCallback(async () => {
     if (!transcript.trim()) return
@@ -297,10 +297,6 @@ export default function App() {
 
   const statusClass = isRecording || mode === 'processing' ? 'text-cyan-400' : 'text-zinc-500'
 
-  const buttonTitle = isRecording ? 'Stop recording'
-    : mode === 'processing' ? (liveMode ? 'Processing...' : 'Processing...')
-    : 'Start recording'
-
   return (
     <div className="grid min-h-svh place-items-center bg-zinc-950 p-4 sm:p-8">
       <div className="flex w-full max-w-lg flex-col items-center gap-6">
@@ -316,7 +312,6 @@ export default function App() {
             onClick={handleClick}
             disabled={mode === 'processing' && !liveMode}
             className="relative cursor-pointer appearance-none border-none bg-transparent p-0 outline-none disabled:cursor-not-allowed disabled:opacity-60"
-            title={buttonTitle}
           >
             {isRecording && (
               <div
@@ -331,7 +326,7 @@ export default function App() {
               size="xl"
               color={auraColor}
               colorShift={mode === 'processing' ? 0.6 : isRecording ? 0.2 + audioLevel * 0.5 : 0.3}
-              state={mode === 'idle' ? 'connecting' : mode === 'processing' ? 'speaking' : isRecording && liveMode ? 'listening' : isRecording ? 'listening' : 'speaking'}
+              state={mode === 'idle' ? 'connecting' : mode === 'processing' ? 'speaking' : isRecording ? 'listening' : 'speaking'}
               themeMode={resolvedTheme}
               className="aspect-square size-auto w-36 sm:w-44"
             />
